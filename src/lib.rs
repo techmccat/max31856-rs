@@ -135,40 +135,57 @@ where
 
     //TODO: method for cold junction temperature offset
 
+    /// Triggers a conversion only if mode is normally off
+    fn conditional_oneshot_trigger(&mut self) -> Result<(), Error> {
+        let cmode = self.config.conversion_mode;
+        match cmode {
+            CMode::NormallyOff => {
+                self.config.one_shot_conversion = OneShot::OneShotConversion;
+                self.send_c0() //One shot only changes c0. This part is executed often
+            }
+            _ => Ok(()),
+        } 
+    }
+    /// Retrieves probe and reference junction temperature with a single measurement
+    pub fn probe_and_reference_temperature(&mut self) -> Result<(f32, f32), Error> {
+        //If conversion mode is normally off, a one-time conversion should be done.
+        //The one shot conversion takes about 150ms and then the bit is reset.
+        //On automatic conversion mode, the temperature can requested without 1-shot trigger
+        self.conditional_oneshot_trigger()?;
+
+        // reading two extra bytes is a rounding error when compared to the conversion time
+        // addr + t_ref + t_probe + fault
+        let mut buf= [0u8; 1 + 2 + 3 + 1];
+        buf[0] = Registers::CJTH.read_address;
+        self.spi.transfer_in_place(&mut buf).map_err(|_| Error::Spi)?;
+
+        fault_to_result(buf[6])?;
+
+        // q7.8 format, 1 LSB = 2^-8
+        let t_ref = i16::from_be_bytes([buf[1], buf[2]]) as f32 / 256.0; // 2^8
+
+        let t_probe = {
+            // The three bits are rearranged to derive the temperature
+            let sign = if buf[3] & 0x80 == 0x80 {-1.0} else {1.0};
+            let mut value = ((buf[3] & 0x7F) as i32) << 24;
+            value += (buf[4] as i32) << 16;
+            value += (buf[5] as i32) << 8;
+            sign * (value as f32)/1048576.0 // 2^10
+        };
+
+        Ok((t_probe, t_ref))
+    }
+
     /// Get the measured value of cold-junction temperature 
     /// plus the value in the Cold-Junction Offset register
     pub fn cold_junction_temperature(&mut self) -> Result<f32, Error> {
-        todo!()
+        self.probe_and_reference_temperature().map(|t| t.1)
     }
 
     /// Get the linearized and cold-junction-compensated thermocouple
     /// temperature value.
     pub fn temperature(&mut self) -> Result<f32, Error>{
-        //If conversion mode is normally off, a one-time conversion should be done.
-        //The one shot conversion takes about 150ms and then the bit is reset.
-        //On automatic conversion mode, the temperature can requested without 1-shot trigger
-
-        let cmode = self.config.conversion_mode;
-        match cmode {
-            CMode::NormallyOff => {
-                self.config.one_shot_conversion = OneShot::OneShotConversion;
-                self.send_c0()?; //One shot only changes c0. This part is executed often
-            }
-            _ => {}
-        } 
-
-        let mut buffer = [0u8; 4]; // Three bytes of temperature data
-        buffer[0] = Registers::LTCBH.read_address;
-        self.spi.transfer_in_place(&mut buffer).map_err(|_| Error::Spi)?;
-        // TODO Check if any of the faults are triggered especially 
-        // Check for over/under voltage or open circuit fault
-
-        // The three bits are rearranged to derive the temperature
-        let sign = if buffer[1] & 0x80 == 0x80 {-1.0} else {1.0};
-        let mut value = ((buffer[1] & 0x7F) as i32) << 24;
-        value += (buffer[2] as i32) << 16;
-        value += (buffer[3] as i32) << 8;
-        Ok(sign * (value as f32)/1048576.0)
+        self.probe_and_reference_temperature().map(|t| t.0)
     }
 
     /// Check if any of the faults are triggered
@@ -176,48 +193,53 @@ where
         let mut buffer = [0u8; 2]; // One byte value from Fault status register
         buffer[0] = Registers::SR.read_address;
         self.spi.transfer_in_place(&mut buffer).map_err(|_| Error::Spi)?;
-        let error_id = buffer[1];
-        let mut has_error = false;
-        let mut errors =  DeviceErrors::default();
 
-        //If overvoltage or undervoltage, all other errors might not be set
-        if(error_id & FaultBits::OVUV) !=0 {
-            errors.overvoltage_undervoltage = true;
-            return Err(Error::Device(errors))
-        }
-        if(error_id & FaultBits::CJ_HIGH) !=0 {
-            errors.cold_junction_high = true;
-            has_error = true;
-        }
-        if(error_id & FaultBits::CJ_LOW) !=0 {
-            errors.cold_junction_low = true;
-            has_error = true;
-        }
-        if(error_id & FaultBits::CJ_RANGE) !=0 {
-            errors.cold_junction_out_of_range = true;
-            has_error = true;
-        }
-        if(error_id & FaultBits::OPEN) !=0 {
-            errors.open_circuit = true;
-            has_error = true;
-        }
-        if(error_id & FaultBits::TC_HIGH) !=0 {
-            errors.thermocouple_high = true;
-            has_error = true;
-        }
-        if(error_id & FaultBits::TC_LOW) !=0 {
-            errors.thermocouple_low = true;
-            has_error = true;
-        }
-        if(error_id & FaultBits::TC_RANGE) !=0 {
-            errors.thermocouple_out_of_range = true;
-            has_error = true;
-        }
-        if has_error {            
-            Err(Error::Device(errors))
-        } else {
-            Ok(())
-        }
+        fault_to_result(buffer[1])
+    }
+}
+
+fn fault_to_result(error_id: u8) -> Result<(), Error> {
+    if error_id == 0 { return Ok(()) }
+    let mut has_error = false;
+    let mut errors = DeviceErrors::default();
+
+    //If overvoltage or undervoltage, all other errors might not be set
+    if(error_id & FaultBits::OVUV) !=0 {
+        errors.overvoltage_undervoltage = true;
+        return Err(Error::Device(errors))
+    }
+    if(error_id & FaultBits::CJ_HIGH) !=0 {
+        errors.cold_junction_high = true;
+        has_error = true;
+    }
+    if(error_id & FaultBits::CJ_LOW) !=0 {
+        errors.cold_junction_low = true;
+        has_error = true;
+    }
+    if(error_id & FaultBits::CJ_RANGE) !=0 {
+        errors.cold_junction_out_of_range = true;
+        has_error = true;
+    }
+    if(error_id & FaultBits::OPEN) !=0 {
+        errors.open_circuit = true;
+        has_error = true;
+    }
+    if(error_id & FaultBits::TC_HIGH) !=0 {
+        errors.thermocouple_high = true;
+        has_error = true;
+    }
+    if(error_id & FaultBits::TC_LOW) !=0 {
+        errors.thermocouple_low = true;
+        has_error = true;
+    }
+    if(error_id & FaultBits::TC_RANGE) !=0 {
+        errors.thermocouple_out_of_range = true;
+        has_error = true;
+    }
+    if has_error {            
+        Err(Error::Device(errors))
+    } else {
+        Ok(())
     }
 }
 

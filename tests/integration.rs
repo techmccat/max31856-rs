@@ -42,14 +42,14 @@ fn can_read_temperature_normally_off() {
         SpiTransaction::write_vec(vec![0x80, 0x40]), //Write oneshot c0
         SpiTransaction::transaction_end(),
         SpiTransaction::transaction_start(),
-        SpiTransaction::transfer_in_place(vec![0x0C, 0,0,0], vec![0x0C, 0x05, 0x72, 0xC0]), //Read temperature registers
+        SpiTransaction::transfer_in_place(vec![0x0A, 0,0,0,0,0,0], vec![0x0A, 0x19, 0x00, 0x05, 0x72, 0xC0, 0x00]), //Read temperature registers
         SpiTransaction::transaction_end(),
     ];
 
     let mut spi = SpiMock::new(&spi_expectations);
     let mut fault = PinMock::new(&[]);
     let mut sensor = Max31856::new(&mut spi, &mut fault);
-    assert_eq!(sensor.temperature().unwrap(), 87.171875);
+    assert_eq!(sensor.probe_and_reference_temperature().unwrap(), (87.171875, 25.0));
     spi.done();
     fault.done();
 }
@@ -62,14 +62,14 @@ fn can_read_negative_temperature_normally_off() {
         SpiTransaction::write_vec(vec![0x80, 0x40]), //Write oneshot c0
         SpiTransaction::transaction_end(),
         SpiTransaction::transaction_start(),
-        SpiTransaction::transfer_in_place(vec![0x0C, 0,0,0], vec![0x0C, 0x85, 0x72, 0xC0]), //Read temperature registers
+        SpiTransaction::transfer_in_place(vec![0x0A, 0,0,0,0,0,0], vec![0x0A, 0xFF, 0x80, 0x85, 0x72, 0xC0, 0x00]), //Read temperature registers
         SpiTransaction::transaction_end(),
     ];
 
     let mut spi = SpiMock::new(&spi_expectations);
     let mut fault = PinMock::new(&[]);
     let mut sensor = Max31856::new(&mut spi, &mut fault);
-    assert_eq!(sensor.temperature().unwrap(), -87.171875);
+    assert_eq!(sensor.probe_and_reference_temperature().unwrap(), (-87.171875, -0.5));
     spi.done();
     fault.done();
 }
