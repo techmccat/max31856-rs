@@ -11,6 +11,7 @@
 //! - Modify default configuration. See: [`config()`]
 //! - Read/write configuration. See: [`send_config()`]
 //! - Read Linearized thermocouple temperature in Celcius. See: [`temperature()`]
+//! - Read cold junction temperature. See: `ref_junction_temp()`
 //! - Read Fault status. See: [`fault_status()`]
 //!
 //! [`config()`]: struct.Max31856.html#method.config
@@ -25,7 +26,6 @@
 //! - Read/write cold junction fault mask registers.
 //! - Read/write Linearized temperature fault registers.
 //! - Read/write cold junction temperature offset registers. 
-//! - Read cold junction temperature. 
 //! 
 //! ## Usage example
 //! ```
@@ -146,8 +146,8 @@ where
             _ => Ok(()),
         } 
     }
-    /// Retrieves probe and reference junction temperature with a single measurement
-    pub fn probe_and_reference_temperature(&mut self) -> Result<(f32, f32), Error> {
+    /// Retrieves probe and cold junction temperature with a single measurement
+    pub fn probe_and_cj_temperature(&mut self) -> Result<(f32, f32), Error> {
         //If conversion mode is normally off, a one-time conversion should be done.
         //The one shot conversion takes about 150ms and then the bit is reset.
         //On automatic conversion mode, the temperature can requested without 1-shot trigger
@@ -178,14 +178,14 @@ where
 
     /// Get the measured value of cold-junction temperature 
     /// plus the value in the Cold-Junction Offset register
-    pub fn cold_junction_temperature(&mut self) -> Result<f32, Error> {
-        self.probe_and_reference_temperature().map(|t| t.1)
+    pub fn ref_junction_temp(&mut self) -> Result<f32, Error> {
+        self.probe_and_cj_temperature().map(|t| t.1)
     }
 
     /// Get the linearized and cold-junction-compensated thermocouple
     /// temperature value.
     pub fn temperature(&mut self) -> Result<f32, Error>{
-        self.probe_and_reference_temperature().map(|t| t.0)
+        self.probe_and_cj_temperature().map(|t| t.0)
     }
 
     /// Check if any of the faults are triggered

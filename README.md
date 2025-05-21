@@ -8,6 +8,7 @@ Features:
 - Modify default configuration. See: `config()`
 - Read/write configuration. See: `send_config()`
 - Read Linearized thermocouple temperature in Celcius. See: `temperature()`
+- Read cold junction temperature. See: `ref_junction()`
 - Read Fault status. See: `fault_status()`
 
 Features in the next few versions:
@@ -17,18 +18,17 @@ Features in the next few versions:
 - Read/write cold junction fault mask registers.
 - Read/write Linearized temperature fault registers.
 - Read/write cold junction temperature offset registers. 
-- Read cold junction temperature. 
 
 ## Usage example
 ```rust
 use max31856;
 
-fn example<S, FP>(spi_dev: S, fault_pin: FP) -> Result<(), max31856::Error>
+fn example<S, FP>(spi_dev: S) -> Result<(), max31856::Error>
 where
     S: embedded_hal::spi::SpiDevice,
     FP: embedded_hal::digital::InputPin,
 {
-    let mut sensor = max31856::Max31856::new(spi_dev, fault_pin);
+    let mut sensor = max31856::Max31856::new(spi_dev);
     // A default configuration is set on creation. It can be edited as follows
     sensor.config().average_samples(max31856::AveragingMode::FourSamples);
     let _ = sensor.send_config();
