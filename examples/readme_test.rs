@@ -48,22 +48,6 @@ impl embedded_hal::digital::OutputPin for FakeCs {
     }
 }
 
-struct FakeFault();
-
-impl embedded_hal::digital::ErrorType for FakeFault {
-    type Error = core::convert::Infallible;
-}
-
-impl embedded_hal::digital::InputPin for FakeFault {
-    fn is_low(&mut self) -> Result<bool, Self::Error> {
-        Ok(true)
-    }
-
-    fn is_high(&mut self) -> Result<bool, Self::Error> {
-        Ok(false)
-    }
-}
-
 #[derive(Clone, Copy)]
 struct FakeDelayer();
 
@@ -77,11 +61,10 @@ fn main () {
     // BEGIN fake stuff that has to be replaced with real peripherals
     let spi_bus = FakeSpiBus();
     let delay = FakeDelayer();
-    let fault_pin = FakeFault();
     let spi_dev = ExclusiveDevice::new(spi_bus, FakeCs(), delay).unwrap();
     // END fake stuff that has to be replaced with real peripherals
 
-    let mut sensor = max31856::Max31856::new(spi_dev, fault_pin);
+    let mut sensor = max31856::Max31856::new(spi_dev);
     // A default configuration is set on creation. It can be edited as follows
     sensor.config().average_samples(max31856::AveragingMode::FourSamples);
     let _ = sensor.send_config();

@@ -31,12 +31,11 @@
 //! ```
 //! use max31856;
 //! 
-//! fn example<S, FP>(spi_dev: S, fault_pin: FP) -> Result<(), max31856::Error>
+//! fn example<S, FP>(spi_dev: S) -> Result<(), max31856::Error>
 //! where
 //!     S: embedded_hal::spi::SpiDevice,
-//!     FP: embedded_hal::digital::InputPin,
 //! {
-//!     let mut sensor = max31856::Max31856::new(spi_dev, fault_pin);
+//!     let mut sensor = max31856::Max31856::new(spi_dev);
 //!     // A default configuration is set on creation. It can be edited as follows
 //!     sensor.config().average_samples(max31856::AveragingMode::FourSamples);
 //!     let _ = sensor.send_config();
@@ -86,30 +85,32 @@ pub const MODE: Mode = MODE_3; // See Table 5. Serial Interface Function
 
 /// Max31856 Precision Thermocouple to Digital Converter with Linearization
 #[derive(Debug, Default)]
-pub struct Max31856<SPI, FP> {
+pub struct Max31856<SPI> {
     spi: SPI,
-    fault: FP,
-    config: Max31856Options
+    config: Max31856Options,
 }
 
-impl<SPI, FP> Max31856<SPI, FP>
+impl<SPI> Max31856<SPI>
 where
     SPI: embedded_hal::spi::SpiDevice,
-    FP: hal::digital::InputPin,
 {
     /// Create a new instance of Max31856
-    pub fn new(spi: SPI, fault_pin: FP) -> Self {
+    pub fn new(spi: SPI) -> Self {
         Max31856 {
             spi,
-            fault: fault_pin,
             config: Max31856Options::default(),
         }
     }
 
     /// Parse options and write to C0 and C1 registers. 
     pub fn send_config(&mut self) -> Result<(), Error> {
-        self.send_c0()?;
-        self.send_c1()
+        let buf = [
+            Registers::CR0.write_address,
+            self.config.extract_c0(),
+            self.config.extract_c1(),
+        ];
+        self.spi.write(&buf)
+            .map_err(|_| Error::Spi)
     }
 
     fn send_c0(&mut self) -> Result<(), Error> {
@@ -127,16 +128,70 @@ where
     pub fn config(&mut self) -> &mut Max31856Options{
         &mut self.config
     }
-    //TODO: method for writing and reading fault mask register
+    /// Sets the enabled (unmasked) fault conditions
+    /// on which the FAULT pin is pulled low
+    ///
+    /// Fault will never be pulled low for cold junction or thermocouple out of range,
+    /// trying to enable them will result in an InvalidArgument error
+    pub fn set_fault_mask(&mut self, enabled: DeviceErrors) -> Result<(), Error> {
+        if enabled.cold_junction_out_of_range || enabled.thermocouple_out_of_range {
+            return Err(Error::InvalidArgument)
+        }
+        let mut mask = Registers::MASK.factory_default;
+        if enabled.open_circuit { mask &= !FaultBits::OPEN }
+        if enabled.overvoltage_undervoltage { mask &= !FaultBits::OVUV }
+        if enabled.thermocouple_low { mask &= !FaultBits::TC_LOW }
+        if enabled.thermocouple_high { mask &= !FaultBits::TC_HIGH }
+        if enabled.cold_junction_low { mask &= !FaultBits::CJ_LOW }
+        if enabled.cold_junction_high { mask &= !FaultBits::CJ_HIGH }
 
-    //TODO: method for setting cold junction high and low fault threshold
+        self.spi.write(&[Registers::MASK.write_address, mask])
+            .map_err(|_| Error::Spi)
+    }
 
-    //TODO: method for setting linearized temperature high and low threshold
+    /// Set cold junction temperature thresholds
+    pub fn set_cj_threshold(&mut self, low: Option<i8>, high: Option<i8>) -> Result<(), Error> {
+        let high = high.map(|s| s as u8)
+            .unwrap_or(Registers::CJHF.factory_default);
+        let low = low.map(|s| s as u8)
+            .unwrap_or(Registers::CJLF.factory_default);
+        let buf = [Registers::CJHF.write_address, high, low];
+        self.spi.write(&buf).map_err(|_| Error::Spi)
+    }
+
+    /// Set thermocouple temperature thresholds
+    pub fn set_thermocouple_threshold(
+        &mut self,
+        low: Option<f32>,
+        high: Option<f32>
+    ) -> Result<(), Error> {
+        let f_to_reg = |f: f32| {
+            let i = (f * 16.0) as i16;
+            let low = (i & 0xFF) as u8;
+            let high = (i >> 8) as u8;
+            (high, low)
+        };
+        let high = high.map(f_to_reg)
+            .unwrap_or((
+                Registers::LTHFTH.factory_default,
+                Registers::LTHFTL.factory_default
+            ));
+        let low = low.map(f_to_reg)
+            .unwrap_or((
+                Registers::LTLFTH.factory_default,
+                Registers::LTLFTL.factory_default
+            ));
+        let buf = [Registers::CJHF.write_address, high.0, high.1, low.0, low.1];
+        self.spi.write(&buf).map_err(|_| Error::Spi)
+    }
 
     //TODO: method for cold junction temperature offset
 
-    /// Triggers a conversion only if mode is normally off
-    fn conditional_oneshot_trigger(&mut self) -> Result<(), Error> {
+    /// Triggers a temperature conversion
+    ///
+    /// In single conversion mode this takes at most 155ms at 60Hz, 185ms as 50Hz  
+    /// No-op if the IC is in automatic conversion mode
+    pub fn trigger_conversion(&mut self) -> Result<(), Error> {
         let cmode = self.config.conversion_mode;
         match cmode {
             CMode::NormallyOff => {
@@ -151,7 +206,7 @@ where
         //If conversion mode is normally off, a one-time conversion should be done.
         //The one shot conversion takes about 150ms and then the bit is reset.
         //On automatic conversion mode, the temperature can requested without 1-shot trigger
-        self.conditional_oneshot_trigger()?;
+        self.trigger_conversion()?;
 
         // reading two extra bytes is a rounding error when compared to the conversion time
         // addr + t_ref + t_probe + fault
