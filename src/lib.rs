@@ -202,12 +202,11 @@ where
         } 
     }
     /// Retrieves probe and cold junction temperature with a single measurement
+    ///
+    /// If in single conversion mode the function must be called after either
+    /// - the documented conversion time elapses
+    /// - the DRDY pin is pulled low
     pub fn probe_and_cj_temperature(&mut self) -> Result<(f32, f32), Error> {
-        //If conversion mode is normally off, a one-time conversion should be done.
-        //The one shot conversion takes about 150ms and then the bit is reset.
-        //On automatic conversion mode, the temperature can requested without 1-shot trigger
-        self.trigger_conversion()?;
-
         // reading two extra bytes is a rounding error when compared to the conversion time
         // addr + t_ref + t_probe + fault
         let mut buf= [0u8; 1 + 2 + 3 + 1];
@@ -233,12 +232,20 @@ where
 
     /// Get the measured value of cold-junction temperature 
     /// plus the value in the Cold-Junction Offset register
+    ///
+    /// If in single conversion mode the function must be called after either
+    /// - the documented conversion time elapses
+    /// - the DRDY pin is pulled low
     pub fn ref_junction_temp(&mut self) -> Result<f32, Error> {
         self.probe_and_cj_temperature().map(|t| t.1)
     }
 
     /// Get the linearized and cold-junction-compensated thermocouple
     /// temperature value.
+    ///
+    /// If in single conversion mode the function must be called after either
+    /// - the documented conversion time elapses
+    /// - the DRDY pin is pulled low
     pub fn temperature(&mut self) -> Result<f32, Error>{
         self.probe_and_cj_temperature().map(|t| t.0)
     }
