@@ -42,6 +42,7 @@ fn can_read_temperature_normally_off() {
 
     let mut spi = SpiMock::new(&spi_expectations);
     let mut sensor = Max31856::new(&mut spi);
+    sensor.trigger_conversion().unwrap();
     assert_eq!(sensor.probe_and_cj_temperature().unwrap(), (87.171875, 25.0));
     spi.done();
 }
@@ -60,6 +61,7 @@ fn can_read_negative_temperature_normally_off() {
 
     let mut spi = SpiMock::new(&spi_expectations);
     let mut sensor = Max31856::new(&mut spi);
+    sensor.trigger_conversion().unwrap();
     assert_eq!(sensor.probe_and_cj_temperature().unwrap(), (-87.171875, -0.5));
     spi.done();
 }
