@@ -1,3 +1,4 @@
+use fixed::types::{I12F20, I8F8};
 use max31856;
 use embedded_hal_mock as hal;
 use self::hal::eh1::spi::{Mock as SpiMock, 
@@ -43,7 +44,10 @@ fn can_read_temperature_normally_off() {
     let mut spi = SpiMock::new(&spi_expectations);
     let mut sensor = Max31856::new(&mut spi);
     sensor.trigger_conversion().unwrap();
-    assert_eq!(sensor.probe_and_cj_temperature().unwrap(), (87.171875, 25.0));
+    assert_eq!(
+        sensor.probe_and_cj_temperature().unwrap(),
+        (I12F20::lit("87.171875"), 25.into())
+    );
     spi.done();
 }
 
@@ -62,7 +66,10 @@ fn can_read_negative_temperature_normally_off() {
     let mut spi = SpiMock::new(&spi_expectations);
     let mut sensor = Max31856::new(&mut spi);
     sensor.trigger_conversion().unwrap();
-    assert_eq!(sensor.probe_and_cj_temperature().unwrap(), (-87.171875, -0.5));
+    assert_eq!(
+        sensor.probe_and_cj_temperature().unwrap(), 
+        (I12F20::lit("-87.171875"), I8F8::lit("-0.5"))
+    );
     spi.done();
 }
 

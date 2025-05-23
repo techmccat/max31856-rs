@@ -55,6 +55,9 @@
 #![allow(dead_code)]
 
 extern crate embedded_hal as hal;
+use core::convert::TryInto;
+
+use fixed::types::{I12F4, I12F20, I8F8};
 use hal::spi::{Mode, MODE_3};
 use configuration::FaultBits;
 
@@ -162,26 +165,20 @@ where
     /// Set thermocouple temperature thresholds
     pub fn set_thermocouple_threshold(
         &mut self,
-        low: Option<f32>,
-        high: Option<f32>
+        low: Option<I12F4>,
+        high: Option<I12F4>
     ) -> Result<(), Error> {
-        let f_to_reg = |f: f32| {
-            let i = (f * 16.0) as i16;
-            let low = (i & 0xFF) as u8;
-            let high = (i >> 8) as u8;
-            (high, low)
-        };
-        let high = high.map(f_to_reg)
-            .unwrap_or((
+        let high = high.map(I12F4::to_be_bytes)
+            .unwrap_or([
                 Registers::LTHFTH.factory_default,
                 Registers::LTHFTL.factory_default
-            ));
-        let low = low.map(f_to_reg)
-            .unwrap_or((
+            ]);
+        let low = low.map(I12F4::to_be_bytes)
+            .unwrap_or([
                 Registers::LTLFTH.factory_default,
                 Registers::LTLFTL.factory_default
-            ));
-        let buf = [Registers::CJHF.write_address, high.0, high.1, low.0, low.1];
+            ]);
+        let buf = [Registers::CJHF.write_address, high[0], high[1], low[0], low[1]];
         self.spi.write(&buf).map_err(|_| Error::Spi)
     }
 
@@ -206,26 +203,28 @@ where
     /// If in single conversion mode the function must be called after either
     /// - the documented conversion time elapses
     /// - the DRDY pin is pulled low
-    pub fn probe_and_cj_temperature(&mut self) -> Result<(f32, f32), Error> {
+    pub fn probe_and_cj_temperature(&mut self) -> Result<(I12F20, I8F8), Error> {
         // reading two extra bytes is a rounding error when compared to the conversion time
         // addr + t_ref + t_probe + fault
-        let mut buf= [0u8; 1 + 2 + 3 + 1];
+        let mut buf = [0u8; 1 + 2 + 3 + 1];
         buf[0] = Registers::CJTH.read_address;
         self.spi.transfer_in_place(&mut buf).map_err(|_| Error::Spi)?;
 
         fault_to_result(buf[6])?;
 
         // q7.8 format, 1 LSB = 2^-8
-        let t_ref = i16::from_be_bytes([buf[1], buf[2]]) as f32 / 256.0; // 2^8
+        let t_ref = I8F8::from_be_bytes([buf[1], buf[2]]);
 
-        let t_probe = {
-            // The three bits are rearranged to derive the temperature
-            let sign = if buf[3] & 0x80 == 0x80 {-1.0} else {1.0};
-            let mut value = ((buf[3] & 0x7F) as i32) << 24;
-            value += (buf[4] as i32) << 16;
-            value += (buf[5] as i32) << 8;
-            sign * (value as f32)/1048576.0 // 2^10
-        };
+        let sign = buf[3] & 0x80 != 0;
+        buf[3] &= !0x80;
+        // lower bits are undefined
+        buf[5] &= 0xE0;
+        // fixed doesn't have 24 bit types so we just extend the fractional part by 8 bits
+        // can't be bothered with signed handling
+        buf[6] = 0;
+
+        let mut t_probe = I12F20::from_be_bytes(buf[3..7].try_into().unwrap());
+        if sign { t_probe = -t_probe }
 
         Ok((t_probe, t_ref))
     }
@@ -236,7 +235,7 @@ where
     /// If in single conversion mode the function must be called after either
     /// - the documented conversion time elapses
     /// - the DRDY pin is pulled low
-    pub fn ref_junction_temp(&mut self) -> Result<f32, Error> {
+    pub fn ref_junction_temp(&mut self) -> Result<I8F8, Error> {
         self.probe_and_cj_temperature().map(|t| t.1)
     }
 
@@ -246,7 +245,7 @@ where
     /// If in single conversion mode the function must be called after either
     /// - the documented conversion time elapses
     /// - the DRDY pin is pulled low
-    pub fn temperature(&mut self) -> Result<f32, Error>{
+    pub fn temperature(&mut self) -> Result<I12F20, Error>{
         self.probe_and_cj_temperature().map(|t| t.0)
     }
 
