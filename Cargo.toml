@@ -22,7 +22,12 @@ include = [
 [badges]
 coveralls = { repository = "idheepan/max31856-rs", branch = "master", service = "github" }
 
+[features]
+default = ["defmt"]
+defmt = ["dep:defmt"]
+
 [dependencies]
+defmt = { version = "1", optional = true }
 embedded-hal = "1.0.0"
 fixed = "1.29.0"
 nb = "1.0"

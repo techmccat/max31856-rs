@@ -69,6 +69,7 @@ use registers::Registers;
 
 /// Errors in this crate
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Error {
     /// SPI communication error
     Spi,

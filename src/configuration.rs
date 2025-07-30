@@ -13,6 +13,7 @@ impl FaultBits {
 
 /// Errors reported by the device.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct DeviceErrors {
     /// The Cold-Junction temperature is outside of the normal operating range.
     pub cold_junction_out_of_range: bool,
@@ -45,6 +46,7 @@ pub struct DeviceErrors {
 
 /// Conversion mode
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum CMode {
     /// 0 = Normally Off mode (default)
     NormallyOff = 0,
@@ -54,6 +56,7 @@ pub enum CMode {
 
 /// One-Shot Modes
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum OneShot {
     /// 0 = No conversions requested (default)
     NoConversion = 0,
@@ -69,6 +72,7 @@ pub enum OneShot {
 
 /// Open circuit detection modes
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum OCFaultModes {
     /// 00 Disabled
     Disabled = 0,
@@ -91,6 +95,7 @@ pub enum OCFaultModes {
 // and respective fault bit until a new fault is detected
 // (note that this may occur immediately if the fault condition is still in place).
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum FaultModes {
     /// Comparator Mode
     Comparator = 0,
@@ -102,6 +107,7 @@ pub enum FaultModes {
 // Note: Change the notch frequency only while in the “Normally Off” mode
 // – not in the Automatic conversion mode.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum NoiseRejectionMode {
     /// Noise rejection for 60Hz
     Reject60Hz = 0,
@@ -139,6 +145,7 @@ impl C1Mask {
 // The Averaging Mode settings SHOULD NOT be changed while
 // conversions are taking place.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum AveragingMode {
     /// One sample for averaging - Default
     OneSample = 0,
@@ -158,6 +165,7 @@ pub enum AveragingMode {
 // Where Code is 19 bit signed number from TC registers
 // and VIN is thermocouple input voltage
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ThermocoupleType {
     /// B type thermocouple
     BType = 0,
@@ -183,6 +191,7 @@ pub enum ThermocoupleType {
 
 /// Options that control configuration of Max31856.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Max31856Options {
     /// Option for conversion mode
     pub conversion_mode: CMode,
