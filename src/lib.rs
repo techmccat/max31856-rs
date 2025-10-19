@@ -216,16 +216,23 @@ where
         // q7.8 format, 1 LSB = 2^-8
         let t_ref = I8F8::from_be_bytes([buf[1], buf[2]]);
 
-        let sign = buf[3] & 0x80 != 0;
-        buf[3] &= !0x80;
+        // datasheet doesn't say it but this is also two's complement
         // lower bits are undefined
         buf[5] &= 0xE0;
-        // fixed doesn't have 24 bit types so we just extend the fractional part by 8 bits
-        // can't be bothered with signed handling
+        // fixed doesn't have 24 bit types so we must extend the fractional part by 8 bits
         buf[6] = 0;
 
-        let mut t_probe = I12F20::from_be_bytes(buf[3..7].try_into().unwrap());
-        if sign { t_probe = -t_probe }
+        let mut tp_bits = i32::from_be_bytes(buf[3..7].try_into().unwrap());
+        if tp_bits < 0 {
+            const EXT_MASK: i32 = (1i32 << (8 + 5)).wrapping_sub(1);
+            // subtract one from the two's complement repr
+            tp_bits -= 1 << (8+5);
+            // set the padding bits to 1 (because they're supposed to be negated)
+            tp_bits |= EXT_MASK;
+            // add 1 because two's complement
+            tp_bits += 1;
+        }
+        let t_probe = I12F20::from_bits(tp_bits);
 
         Ok((t_probe, t_ref))
     }
