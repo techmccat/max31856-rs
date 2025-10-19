@@ -59,7 +59,7 @@ fn can_read_negative_temperature_normally_off() {
         SpiTransaction::write_vec(vec![0x80, 0x40]), //Write oneshot c0
         SpiTransaction::transaction_end(),
         SpiTransaction::transaction_start(),
-        SpiTransaction::transfer_in_place(vec![0x0A, 0,0,0,0,0,0], vec![0x0A, 0xFF, 0x80, 0x85, 0x72, 0xC0, 0x00]), //Read temperature registers
+        SpiTransaction::transfer_in_place(vec![0x0A, 0,0,0,0,0,0], vec![0x0A, 0xFF, 0x80, 0xFA, 0x8D, 0x40, 0x00]), //Read temperature registers
         SpiTransaction::transaction_end(),
     ];
 
